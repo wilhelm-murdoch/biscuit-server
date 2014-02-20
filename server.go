@@ -1,9 +1,9 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"github.com/codegangsta/martini"
-	goopt "github.com/droundy/goopt"
 	_ "github.com/wilhelm-murdoch/biscuit"
 	"os"
 	"path/filepath"
@@ -18,19 +18,21 @@ const (
 )
 
 var (
-	port    = goopt.String([]string{"-p", "--port"}, "8001", "server port assignment")
-	load    = goopt.String([]string{"-l", "--load"}, "", "comma separated list of bodies to load (all by default)")
-	support = goopt.Flag([]string{"-s", "--support"}, []string{}, "lists all supported bodies of text", "")
-	version = goopt.Flag([]string{"-v", "--version"}, []string{}, "current version of this server", "")
+	port    = flag.Int("p", 8001, "server port assignment")
+	support = flag.Bool("s", false, "lists all supported bodies of text")
+	version = flag.Bool("v", false, "current version of this server")
+	load    = flag.String("l", "", "comma separated list of bodies to load (all by default)")
 )
 
+func usage() {
+	fmt.Fprintf(os.Stderr, "usage: biscuitserver [flags]\n")
+	flag.PrintDefaults()
+	os.Exit(2)
+}
+
 func init() {
-	goopt.Description = func() string {
-		return "A RESTful wrapper for the Biscuit library."
-	}
-	goopt.Version = Version
-	goopt.Summary = "A RESTful wrapper for the Biscuit library."
-	goopt.Parse(nil)
+	flag.Usage = usage
+	flag.Parse()
 
 	// Command line arguments will be read here.
 	// Corpora for different languages will be read and parsed here before startup.
