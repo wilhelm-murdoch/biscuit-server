@@ -3,8 +3,10 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/codegangsta/martini"
+	"github.com/julienschmidt/httprouter"
 	_ "github.com/wilhelm-murdoch/biscuit"
+	"log"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -22,6 +24,7 @@ var (
 	support = flag.Bool("s", false, "lists all supported bodies of text")
 	version = flag.Bool("v", false, "current version of this server")
 	load    = flag.String("l", "", "comma separated list of bodies to load (all by default)")
+	dir     = flag.String("d", "./corpora/*.csv", "glob path pointing to stored tables")
 )
 
 func usage() {
@@ -47,9 +50,9 @@ func init() {
 	}
 
 	if *support {
-		bodies, err := getListOfSupportedBodies("./corpora/*.csv")
+		bodies, err := getListOfSupportedBodies(*dir)
 		if err != nil {
-			fmt.Println("ohones")
+			fmt.Println("None found ... Maybe check your path?")
 			os.Exit(1)
 		}
 
@@ -65,9 +68,9 @@ func init() {
 	}
 
 	if *load != "" {
-		bodies, err := getListOfSupportedBodies("./corpora/*.csv")
+		bodies, err := getListOfSupportedBodies(*dir)
 		if err != nil {
-			fmt.Printf("could not load bodies from path `%s`\n", "")
+			fmt.Printf("could not load bodies from path `%s`\n", *dir)
 			os.Exit(1)
 		}
 
@@ -90,7 +93,7 @@ func indexOfStringSlice(value string, slice []string) int {
 }
 
 func getListOfSupportedBodies(path string) ([]string, error) {
-	samples, _ := filepath.Glob("./corpora/*.csv")
+	samples, _ := filepath.Glob(path)
 	bodies := []string{}
 
 	for _, file := range samples {
@@ -100,13 +103,20 @@ func getListOfSupportedBodies(path string) ([]string, error) {
 	return bodies, nil
 }
 
+func Index(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
+	bodies, err := getListOfSupportedBodies(*dir)
+	if err != nil {
+		fmt.Fprint(w, "could not load bodies from path `%s`\n", *dir)
+		return
+	}
+
+	fmt.Fprint(w, "Supported bodies: "+strings.Join(bodies, ", "))
+}
+
 func main() {
-	m := martini.Classic()
-	m.Get("/", func() string {
-		return "A form for manual entry will go here ..."
-	})
-	m.Post("/", func() string {
-		return "JSON response containing scores, best match and processing time."
-	})
-	m.Run()
+	router := httprouter.New()
+	router.GET("/", Index)
+
+	log.Printf("running %s v.%s on %d", Name, Version, *port)
+	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", *port), router))
 }
