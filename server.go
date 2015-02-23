@@ -113,9 +113,14 @@ func Index(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 	fmt.Fprint(w, "Supported bodies: "+strings.Join(bodies, ", "))
 }
 
+func Process(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
+
+}
+
 func main() {
 	router := httprouter.New()
 	router.GET("/", Index)
+	router.POST("/", Process)
 
 	log.Printf("running %s v.%s on %d", Name, Version, *port)
 	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", *port), router))
