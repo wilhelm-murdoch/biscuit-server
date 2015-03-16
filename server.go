@@ -78,6 +78,8 @@ func loadModel(file string, wg *sync.WaitGroup) {
 }
 
 func Index(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
+	defer r.Body.Close()
+
 	var form = `
 	<!DOCTYPE html>
 	<h2>Language Detector</h2>
@@ -101,8 +103,26 @@ func Index(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 	t.Execute(w, data)
 }
 
-func Process(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
-	log.Println(r.Form.Get("bodies"))
+func Process(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
+	defer r.Body.Close()
+
+	r.ParseForm()
+
+	unknown := biscuit.NewModelFromText("unknown", r.Form.Get("text"), 3)
+
+	var modelInstances = make([]*biscuit.Model, 0, len(models))
+
+	for k, v := range models {
+		fmt.Println(k)
+		modelInstances = append(modelInstances, v)
+	}
+
+	match, err := unknown.MatchReturnBest(modelInstances)
+	if err != nil {
+		log.Println("welp")
+	}
+
+	fmt.Fprintf(w, match)
 }
 
 func main() {
