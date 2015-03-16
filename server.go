@@ -4,12 +4,13 @@ import (
 	"flag"
 	"fmt"
 	"github.com/julienschmidt/httprouter"
-	_ "github.com/wilhelm-murdoch/biscuit"
+	"github.com/wilhelm-murdoch/biscuit"
+	"html/template"
 	"log"
 	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
+	"sync"
 )
 
 const (
@@ -21,10 +22,10 @@ const (
 
 var (
 	port    = flag.Int("p", 8001, "server port assignment")
-	support = flag.Bool("s", false, "lists all supported bodies of text")
 	version = flag.Bool("v", false, "current version of this server")
-	load    = flag.String("l", "", "comma separated list of bodies to load (all by default)")
 	dir     = flag.String("d", "./corpora/*.csv", "glob path pointing to stored tables")
+	bodies  = []string{}
+	models  = make(map[string]*biscuit.Model)
 )
 
 func usage() {
@@ -37,84 +38,71 @@ func init() {
 	flag.Usage = usage
 	flag.Parse()
 
-	// Command line arguments will be read here.
-	// Corpora for different languages will be read and parsed here before startup.
-	// This is memory intensive, so, to increase startup times, I'm thinking a go
-	// routine for each corpus of data that feeds into a map channel. Once the
-	// number of specified bodies equals the number of entries in the map, we're done.
-	// Essentially, block until all bodies are loaded into memory.
-
 	if *version {
 		fmt.Println(Name, Version)
 		os.Exit(0)
 	}
 
-	if *support {
-		bodies, err := getListOfSupportedBodies(*dir)
-		if err != nil {
-			fmt.Println("None found ... Maybe check your path?")
-			os.Exit(1)
-		}
+	files, err := filepath.Glob(*dir)
+	if err != nil {
+		log.Println("Could not load bodies from path:", err)
+		os.Exit(1)
+	}
+	var wg sync.WaitGroup
 
-		if len(bodies) == 0 {
-			fmt.Println("None found ... Maybe check your path?")
-		} else {
-			fmt.Print(len(bodies))
-			fmt.Println(" Found:")
-			fmt.Println("- " + strings.Join(bodies, "\t\n- "))
-		}
+	log.Printf("LOADING %d MODEL(S) ...", len(files))
+	for _, file := range files {
+		wg.Add(1)
 
-		os.Exit(0)
+		go loadModel(file, &wg)
 	}
 
-	if *load != "" {
-		bodies, err := getListOfSupportedBodies(*dir)
-		if err != nil {
-			fmt.Printf("could not load bodies from path `%s`\n", *dir)
-			os.Exit(1)
-		}
-
-		for _, body := range strings.Split(*load, ",") {
-			if strings.TrimSpace(body) != "" && indexOfStringSlice(body, bodies) == -1 {
-				fmt.Printf("`%s` not a supported body\n", body)
-				os.Exit(1)
-			}
-		}
-	}
+	wg.Wait()
 }
 
-func indexOfStringSlice(value string, slice []string) int {
-	for p, v := range slice {
-		if v == value {
-			return p
-		}
-	}
-	return -1
-}
+func loadModel(file string, wg *sync.WaitGroup) {
+	defer wg.Done()
 
-func getListOfSupportedBodies(path string) ([]string, error) {
-	samples, _ := filepath.Glob(path)
-	bodies := []string{}
+	label := filepath.Base(file)[:2]
+	bodies = append(bodies, label)
 
-	for _, file := range samples {
-		bodies = append(bodies, filepath.Base(file)[:2])
+	model, err := biscuit.NewModelFromFile(label, file, 3)
+	if err != nil {
+		log.Println("Could not create model from body:", err)
+		os.Exit(1)
 	}
 
-	return bodies, nil
+	log.Println("... loaded model:", label)
+
+	models[label] = model
 }
 
 func Index(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
-	bodies, err := getListOfSupportedBodies(*dir)
-	if err != nil {
-		fmt.Fprint(w, "could not load bodies from path `%s`\n", *dir)
-		return
+	var form = `
+	<!DOCTYPE html>
+	<h2>Language Detector</h2>
+	<p>Add some text and select the models to test against.</p>
+	<form method="post">
+		<textarea rows="10" cols="80" name="text"></textarea><br />
+		{{ range .Bodies }}
+			<label><input type="checkbox" name="bodies" value="{{ . }}" checked="checked" />{{ . }}</label><br />
+		{{ end }}
+		<hr />
+		<input type="submit" value="Process ..." />
+	</form>`
+
+	data := struct {
+		Bodies []string
+	}{
+		bodies,
 	}
 
-	fmt.Fprint(w, "Supported bodies: "+strings.Join(bodies, ", "))
+	t := template.Must(template.New("form").Parse(form))
+	t.Execute(w, data)
 }
 
 func Process(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
-
+	log.Println(r.Form.Get("bodies"))
 }
 
 func main() {
@@ -122,6 +110,6 @@ func main() {
 	router.GET("/", Index)
 	router.POST("/", Process)
 
-	log.Printf("running %s v.%s on %d", Name, Version, *port)
+	log.Printf("Running %s v.%s on %d", Name, Version, *port)
 	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", *port), router))
 }
