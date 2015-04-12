@@ -57,7 +57,7 @@ var (
 )
 
 func usage() {
-	fmt.Fprintf(os.Stderr, "usage: biscuitserver [flags]\n")
+	fmt.Fprintf(os.Stderr, "usage: biscuit-server [flags]\n")
 	flag.PrintDefaults()
 	os.Exit(2)
 }
