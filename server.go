@@ -28,7 +28,6 @@ const (
 		</head>
 		<body>
 			<h2>Language Detector</h2>
-			<p>Add some text and select the models to test against.</p>
 			<form method="post">
 				<textarea rows="10" cols="80" name="text">{{ .Text }}</textarea><br />
 				<small>testing against: <em>{{ join .Bodies "," }}</em></small>
