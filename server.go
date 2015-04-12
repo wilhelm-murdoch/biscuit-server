@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 )
 
@@ -18,6 +19,34 @@ const (
 	Name = "biscuit-server"
 	// Version defines this utility's current version
 	Version = "1.0.0"
+	// Simple HTML template for testing panel
+	Template = `
+	<!DOCTYPE html>
+	<html>
+		<head>
+			<title>{{ .Name }} {{ .Version }} - test suite</title>
+		</head>
+		<body>
+			<h2>Language Detector</h2>
+			<p>Add some text and select the models to test against.</p>
+			<form method="post">
+				<textarea rows="10" cols="80" name="text">{{ .Text }}</textarea><br />
+				<small>testing against: <em>{{ join .Bodies "," }}</em></small>
+				<hr />
+				<input type="submit" value="Process ..." />
+			</form>
+			{{ if .Results }}
+				{{ $scores := .Scores }}
+
+				<h3>Results:</h3>
+				<ul>
+					{{ range $result := .Results }}
+						<li><code>{{$result}} = {{ index $scores $result }}</code></li>
+					{{ end }}
+				</ul>
+			{{ end }}
+		</body>
+	</html>`
 )
 
 var (
@@ -79,28 +108,7 @@ func loadModel(file string, wg *sync.WaitGroup) {
 
 func Index(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 	defer r.Body.Close()
-
-	var form = `
-	<!DOCTYPE html>
-	<h2>Language Detector</h2>
-	<p>Add some text and select the models to test against.</p>
-	<form method="post">
-		<textarea rows="10" cols="80" name="text"></textarea><br />
-		{{ range .Bodies }}
-			<label><input type="checkbox" name="bodies" value="{{ . }}" checked="checked" />{{ . }}</label><br />
-		{{ end }}
-		<hr />
-		<input type="submit" value="Process ..." />
-	</form>`
-
-	data := struct {
-		Bodies []string
-	}{
-		bodies,
-	}
-
-	t := template.Must(template.New("form").Parse(form))
-	t.Execute(w, data)
+	defer Output(w, bodies, []string{}, map[string]float64{}, "")
 }
 
 func Process(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
@@ -112,17 +120,41 @@ func Process(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 
 	var modelInstances = make([]*biscuit.Model, 0, len(models))
 
-	for k, v := range models {
-		fmt.Println(k)
+	for _, v := range models {
 		modelInstances = append(modelInstances, v)
 	}
 
-	match, err := unknown.MatchReturnBest(modelInstances)
+	results, scores, err := unknown.MatchReturnAll(modelInstances)
 	if err != nil {
-		log.Println("welp")
+		panic(err)
 	}
 
-	fmt.Fprintf(w, match)
+	Output(w, bodies, results, scores, r.Form.Get("text"))
+}
+
+func Output(w http.ResponseWriter, bodies, results []string, scores map[string]float64, text string) {
+	ctx := struct {
+		Bodies  []string
+		Name    string
+		Version string
+		Results []string
+		Scores  map[string]float64
+		Text    string
+	}{
+		bodies,
+		Name,
+		Version,
+		results,
+		scores,
+		text,
+	}
+
+	fm := template.FuncMap{
+		"join": strings.Join,
+	}
+
+	t := template.Must(template.New("form").Funcs(fm).Parse(Template))
+	t.Execute(w, ctx)
 }
 
 func main() {
